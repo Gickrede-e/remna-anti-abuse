@@ -62,6 +62,13 @@ In the Remnawave UI:
 2. Set the webhook secret to the same value as `WEBHOOK_SECRET`.
 3. Subscribe to scopes **`user`** and **`user_hwid_devices`** at minimum.
 
+### Step-by-step VPS guides
+
+- [Install on the same VPS as the panel](docs/install-same-vps.md) — простейший
+  вариант, общая docker-сеть, без публичного порта и TLS.
+- [Install on a separate VPS](docs/install-separate-vps.md) — отдельный сервер
+  с публичным доменом, TLS через Caddy.
+
 ## Running locally
 
 ```bash
