@@ -12,7 +12,7 @@
 │  VPS A (панель)    │  webhook POST  │   VPS B (anti-abuse)     │
 │  panel.example.com │ ─────────────▶ │  abuse.example.com:443   │
 │                    │ ◀───────────── │                          │
-│  REST API          │   disable user │  Caddy → Fastify :3000   │
+│  REST API          │   disable user │  Caddy → Fastify :3088   │
 └────────────────────┘                │  SQLite в /opt/aa/data   │
                                        └──────────────────────────┘
 ```
@@ -57,7 +57,7 @@ nano .env
 ```
 
 ```env
-PORT=3000
+PORT=3088
 HOST=0.0.0.0
 DB_PATH=/data/anti-abuse.sqlite
 
@@ -84,7 +84,7 @@ Caddy сам получит и обновит сертификат от Let's En
 ```caddyfile
 abuse.example.com {
     encode gzip
-    reverse_proxy anti-abuse:3000
+    reverse_proxy anti-abuse:3088
 }
 ```
 
@@ -100,11 +100,11 @@ services:
     env_file:
       - .env
     expose:
-      - "3000"            # только внутри docker-сети
+      - "3088"            # только внутри docker-сети
     volumes:
       - anti-abuse-data:/data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3088/health"]
       interval: 30s
       timeout: 5s
       retries: 3

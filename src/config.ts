@@ -8,7 +8,7 @@ const csv = (raw: string) =>
     .filter((s) => s.length > 0);
 
 const ConfigSchema = z.object({
-  port: z.coerce.number().int().positive().default(3000),
+  port: z.coerce.number().int().positive().default(3088),
   host: z.string().default('0.0.0.0'),
   dbPath: z.string().default('/data/anti-abuse.sqlite'),
 

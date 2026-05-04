@@ -34,7 +34,7 @@ that consumes Remnawave webhooks and calls the public REST API.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `PORT` | no | `3000` | HTTP port to listen on |
+| `PORT` | no | `3088` | HTTP port to listen on |
 | `HOST` | no | `0.0.0.0` | Bind address |
 | `DB_PATH` | no | `./data/anti-abuse.sqlite` | SQLite file location |
 | `REMNAWAVE_BASE_URL` | yes | — | e.g. `https://panel.example.com` |
@@ -57,7 +57,7 @@ docker compose up -d
 
 In the Remnawave UI:
 
-1. Settings → Webhooks → add URL `http://anti-abuse:3000/webhook` (if compose
+1. Settings → Webhooks → add URL `http://anti-abuse:3088/webhook` (if compose
    networks are shared) or your reverse-proxied URL.
 2. Set the webhook secret to the same value as `WEBHOOK_SECRET`.
 3. Subscribe to scopes **`user`** and **`user_hwid_devices`** at minimum.

@@ -41,8 +41,8 @@ nano .env
 Заполните минимум эти переменные:
 
 ```env
-# Внутри контейнера слушаем 3000, наружу не публикуем
-PORT=3000
+# Внутри контейнера слушаем 3088, наружу не публикуем
+PORT=3088
 HOST=0.0.0.0
 DB_PATH=/data/anti-abuse.sqlite
 
@@ -80,7 +80,7 @@ services:
     networks:
       - remnawave-network        # <- замените на имя сети из шага 2
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3088/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -112,16 +112,16 @@ docker compose logs -f anti-abuse
 Должно появиться:
 ```
 INFO: starting anti-abuse service
-INFO: Server listening at http://0.0.0.0:3000
+INFO: Server listening at http://0.0.0.0:3088
 ```
 
-Из контейнера панели сервис теперь доступен как `http://remna-anti-abuse:3000`.
+Из контейнера панели сервис теперь доступен как `http://remna-anti-abuse:3088`.
 
 ## 6. Прописываем вебхук в панели
 
 В UI панели: **Settings → Webhooks → Add webhook**
 
-- **URL:** `http://remna-anti-abuse:3000/webhook`
+- **URL:** `http://remna-anti-abuse:3088/webhook`
 - **Secret:** значение `WEBHOOK_SECRET` из `.env`
 - **Scopes:** включить `user` и `user_hwid_devices` (минимум). Можно подписаться
   только на `user.created`, `user.deleted`, `user_hwid_devices.added`.

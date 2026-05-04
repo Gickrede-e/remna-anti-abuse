@@ -18,5 +18,5 @@ COPY migrations ./migrations
 RUN mkdir -p /data && chown -R node:node /data
 USER node
 ENV DB_PATH=/data/anti-abuse.sqlite
-EXPOSE 3000
+EXPOSE 3088
 CMD ["node", "dist/main.js"]
