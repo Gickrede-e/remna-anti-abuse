@@ -63,44 +63,34 @@ LOG_LEVEL=info
 
 ## 4. Подключаем к сети панели
 
-Откройте `docker-compose.yml` в корне репо и добавьте раздел `networks`:
+Создайте **рядом** с `docker-compose.yml` файл `docker-compose.override.yml`
+со своими локальными правками. Compose автоматически накладывает override
+поверх основного файла. Этот файл уже в `.gitignore` — `git pull` его не
+тронет, конфликтов при апдейтах не будет.
 
 ```yaml
+# docker-compose.override.yml
 services:
   anti-abuse:
-    build: .
-    image: remna-anti-abuse:latest
-    container_name: remna-anti-abuse
-    restart: unless-stopped
-    env_file:
-      - .env
     # порт наружу НЕ публикуем — общаемся только через docker-сеть
-    volumes:
-      - anti-abuse-data:/data
+    ports: !reset []
     networks:
       - remnawave-network        # <- замените на имя сети из шага 2
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3088/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-volumes:
-  anti-abuse-data:
 
 networks:
   remnawave-network:
     external: true
 ```
 
-> Используем именованный docker-volume, а не bind-mount: так SQLite-файл
-> хранится в `/var/lib/docker/volumes/...` с правильными правами
-> (UID 1000, как `node` внутри контейнера). Если использовать `./data:/data`,
-> Docker создаёт хостовую папку под root, а контейнер не сможет в неё писать —
-> увидите `EACCES: permission denied, mkdir '/data'`.
+`!reset []` обнуляет проброс портов из основного файла. Если ваша версия
+Compose не понимает `!reset`, то можно оставить порт открытым на хосте
+(не страшно — между панелью и anti-abuse трафик всё равно идёт по docker-сети
+по имени контейнера).
 
-Удалите строки `ports:` целиком (или оставьте, если хотите проверять `/health`
-с хоста).
+> SQLite живёт в named volume `anti-abuse-data` (определён в основном
+> `docker-compose.yml`) — `/var/lib/docker/volumes/...` с правами UID 1000
+> для `node` внутри контейнера. Не используйте bind-mount `./data:/data` —
+> получите `EACCES: permission denied, mkdir '/data'`.
 
 ## 5. Запускаем
 

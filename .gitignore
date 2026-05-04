@@ -8,3 +8,9 @@ data/
 *.sqlite-journal
 .DS_Store
 coverage/
+# Local Compose overrides — keep deploy-specific edits out of git so
+# `git pull` never conflicts. Compose auto-merges this file on top of
+# docker-compose.yml.
+docker-compose.override.yml
+docker-compose.override.yaml
+Caddyfile.local

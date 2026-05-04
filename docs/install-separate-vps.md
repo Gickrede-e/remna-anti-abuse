@@ -88,26 +88,16 @@ abuse.example.com {
 }
 ```
 
-И обновите `docker-compose.yml`, добавив сервис `caddy`:
+Создайте **рядом** с `docker-compose.yml` файл `docker-compose.override.yml`
+с дополнительным сервисом `caddy`. Этот override-файл в `.gitignore` —
+`git pull` его не тронет:
 
 ```yaml
+# docker-compose.override.yml
 services:
   anti-abuse:
-    build: .
-    image: remna-anti-abuse:latest
-    container_name: remna-anti-abuse
-    restart: unless-stopped
-    env_file:
-      - .env
-    expose:
-      - "3088"            # только внутри docker-сети
-    volumes:
-      - anti-abuse-data:/data
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3088/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # 3088 наружу не пускаем, только внутри docker-сети — Caddy проксирует HTTPS
+    ports: !reset []
 
   caddy:
     image: caddy:2-alpine
@@ -125,14 +115,13 @@ services:
       - anti-abuse
 
 volumes:
-  anti-abuse-data:
   caddy-data:
   caddy-config:
 ```
 
-> SQLite живёт в named volume `anti-abuse-data`, а не в bind-mount `./data` —
-> так контейнерный пользователь `node` получает корректные права. Если
-> заменить на `./data:/data`, на старте получите
+> Основной `docker-compose.yml` уже определяет volume `anti-abuse-data` для
+> SQLite (named volume, не bind-mount — даёт правильные права UID 1000 для
+> `node` внутри контейнера). Bind-mount `./data:/data` приводит к
 > `EACCES: permission denied, mkdir '/data'`.
 
 > Если у вас уже есть nginx/traefik на этом VPS — поднимайте только
