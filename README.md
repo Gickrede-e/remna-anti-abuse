@@ -104,6 +104,36 @@ FROM abuse_log ORDER BY detected_at DESC LIMIT 50;
 SELECT user_uuid, COUNT(*) c FROM trial_hwids GROUP BY user_uuid ORDER BY c DESC;
 ```
 
+## Troubleshooting
+
+### `EACCES: permission denied, mkdir '/data'` (или `'./data'`)
+
+The container process runs as the unprivileged `node` user (UID 1000). Two
+common causes:
+
+1. `DB_PATH` resolves to a relative path like `./data/...`, which lands in
+   `/app/data` — `/app` belongs to root. Use the absolute path
+   `/data/anti-abuse.sqlite` (default in `.env.example`).
+2. The compose file used a bind-mount `./data:/data`. Docker creates the host
+   folder owned by root, and the container can't write to it. The shipped
+   `docker-compose.yml` uses a **named volume** (`anti-abuse-data:/data`)
+   instead, which inherits container ownership.
+
+If you're upgrading from an older version that used the bind-mount, after
+`git pull` run:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
+To migrate existing data from `./data/` into the new named volume:
+
+```bash
+docker run --rm -v "$PWD/data":/from -v remna-anti-abuse_anti-abuse-data:/to \
+  alpine sh -c 'cp -a /from/. /to/ && chown -R 1000:1000 /to'
+```
+
 ## Security notes
 
 - Webhook signature is verified with HMAC-SHA256 in constant time. Requests

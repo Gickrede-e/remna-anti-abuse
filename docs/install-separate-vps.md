@@ -102,7 +102,7 @@ services:
     expose:
       - "3000"            # только внутри docker-сети
     volumes:
-      - ./data:/data
+      - anti-abuse-data:/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 30s
@@ -125,9 +125,15 @@ services:
       - anti-abuse
 
 volumes:
+  anti-abuse-data:
   caddy-data:
   caddy-config:
 ```
+
+> SQLite живёт в named volume `anti-abuse-data`, а не в bind-mount `./data` —
+> так контейнерный пользователь `node` получает корректные права. Если
+> заменить на `./data:/data`, на старте получите
+> `EACCES: permission denied, mkdir '/data'`.
 
 > Если у вас уже есть nginx/traefik на этом VPS — поднимайте только
 > сервис `anti-abuse` (без `ports:`) и проксируйте на него своим
@@ -180,8 +186,12 @@ incoming request POST /webhook → 200/401
 
 ## 8. Что важно для прод-эксплуатации
 
-- **Бэкап БД.** SQLite-файл в `./data/anti-abuse.sqlite`. Достаточно ежедневно
-  копировать его (`sqlite3 .backup`) в S3/rsync.
+- **Бэкап БД.** SQLite живёт в named volume `anti-abuse-data`. Бэкап:
+  ```bash
+  docker run --rm -v remna-anti-abuse_anti-abuse-data:/data alpine \
+    tar czf - -C /data . > anti-abuse-$(date +%F).tar.gz
+  ```
+  И ежедневно сливать архив в S3/rsync.
 - **Мониторинг.** `GET https://abuse.example.com/health` дёргайте из
   Uptime Kuma / любого пингера. Тревога — если 200 не отвечает.
 - **Ограничение доступа.** Если хочется параноидальной защиты — закройте

@@ -10,7 +10,7 @@ const csv = (raw: string) =>
 const ConfigSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
   host: z.string().default('0.0.0.0'),
-  dbPath: z.string().default('./data/anti-abuse.sqlite'),
+  dbPath: z.string().default('/data/anti-abuse.sqlite'),
 
   remnawaveBaseUrl: z.string().url(),
   remnawaveApiToken: z.string().min(1),
