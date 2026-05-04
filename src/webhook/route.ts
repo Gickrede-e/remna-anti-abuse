@@ -50,14 +50,29 @@ export async function registerWebhookRoute(
     const timestamp = header(req, TIMESTAMP_HEADER);
 
     if (!signature) {
+      opts.logger.warn(
+        { headers: Object.keys(req.headers) },
+        'webhook rejected: missing x-remnawave-signature header',
+      );
       return reply.code(401).send({ error: 'missing signature header' });
     }
     if (!isFreshTimestamp(timestamp, opts.timestampToleranceSec)) {
-      opts.logger.warn({ timestamp }, 'webhook rejected: stale or missing timestamp');
+      opts.logger.warn(
+        { timestamp, toleranceSec: opts.timestampToleranceSec, now: new Date().toISOString() },
+        'webhook rejected: stale or missing timestamp',
+      );
       return reply.code(401).send({ error: 'stale or missing timestamp' });
     }
     if (!verifySignature(rawBody, signature, opts.webhookSecret)) {
-      opts.logger.warn('webhook rejected: signature mismatch');
+      opts.logger.warn(
+        {
+          signaturePrefix: signature.slice(0, 8),
+          signatureLength: signature.length,
+          bodyLength: rawBody.length,
+          secretLength: opts.webhookSecret.length,
+        },
+        'webhook rejected: signature mismatch — check WEBHOOK_SECRET matches the panel',
+      );
       return reply.code(401).send({ error: 'invalid signature' });
     }
 
