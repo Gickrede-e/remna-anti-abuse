@@ -53,7 +53,7 @@ REMNAWAVE_API_TOKEN=eyJhbGciOi...   # из Settings → API Tokens
 # Любая длинная случайная строка. Совпадает с тем, что введём в UI Webhooks
 WEBHOOK_SECRET=$(openssl rand -hex 32)
 
-TRIAL_TAGS=trial            # совпадает с тегом, который вы ставите trial-юзерам
+TRIAL_TAGS=TRIAL            # ВАЖНО: tag в Remnawave разрешён только UPPERCASE
 DRY_RUN=true                # рекомендуется для первой обкатки
 LOG_LEVEL=info
 ```

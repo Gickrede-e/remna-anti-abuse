@@ -71,7 +71,7 @@ WEBHOOK_SECRET=$(openssl rand -hex 32)
 # Защита от replay — оставляем 5 минут
 WEBHOOK_TIMESTAMP_TOLERANCE_SEC=300
 
-TRIAL_TAGS=trial
+TRIAL_TAGS=TRIAL          # ВАЖНО: Remnawave разрешает tag только UPPERCASE
 DRY_RUN=true
 LOG_LEVEL=info
 ```
