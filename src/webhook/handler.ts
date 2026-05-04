@@ -1,8 +1,40 @@
-import { RemnawaveWebhookEventSchema } from '@remnawave/backend-contract';
+import { z } from 'zod';
 import type { Logger } from '../logger.js';
 import type { TrialGuard } from '../service/trial-guard.js';
 
-export type WebhookEvent = ReturnType<typeof RemnawaveWebhookEventSchema.parse>;
+/**
+ * Минимально валидируем только то, что нам нужно. Это устойчивее к разнице
+ * версий между панелью и npm-пакетом @remnawave/backend-contract — реальный
+ * payload может содержать больше или меньше полей, нам важны uuid + tag + hwid.
+ */
+const envelopeSchema = z
+  .object({
+    scope: z.string(),
+    event: z.string().optional(),
+    data: z.unknown(),
+  })
+  .passthrough();
+
+const userDataSchema = z
+  .object({
+    uuid: z.string(),
+    username: z.string().default(''),
+    tag: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const hwidDataSchema = z
+  .object({
+    user: userDataSchema,
+    hwidUserDevice: z
+      .object({
+        hwid: z.string(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+export type WebhookEvent = z.infer<typeof envelopeSchema>;
 
 export interface WebhookHandlerOptions {
   guard: TrialGuard;
@@ -10,7 +42,7 @@ export interface WebhookHandlerOptions {
 }
 
 export function parseWebhookEvent(body: unknown): WebhookEvent {
-  return RemnawaveWebhookEventSchema.parse(body);
+  return envelopeSchema.parse(body);
 }
 
 export async function handleWebhookEvent(
@@ -19,39 +51,41 @@ export async function handleWebhookEvent(
 ): Promise<void> {
   const { guard, logger } = opts;
 
-  switch (event.scope) {
-    case 'user': {
-      if (event.event === 'user.created') {
-        guard.onUserCreated({
-          uuid: event.data.uuid,
-          username: event.data.username,
-          tag: event.data.tag,
-        });
-        return;
-      }
-      if (event.event === 'user.deleted') {
-        guard.onUserDeleted(event.data.uuid);
-        return;
-      }
-      logger.debug({ event: event.event }, 'user event ignored');
+  if (event.scope === 'user') {
+    if (event.event === 'user.created') {
+      const data = userDataSchema.parse(event.data);
+      guard.onUserCreated({
+        uuid: data.uuid,
+        username: data.username,
+        tag: data.tag ?? null,
+      });
       return;
     }
-    case 'user_hwid_devices': {
-      if (event.event === 'user_hwid_devices.added') {
-        await guard.onHwidAdded(
-          {
-            uuid: event.data.user.uuid,
-            username: event.data.user.username,
-            tag: event.data.user.tag,
-          },
-          { hwid: event.data.hwidUserDevice.hwid },
-        );
-        return;
-      }
-      logger.debug({ event: event.event }, 'hwid event ignored');
+    if (event.event === 'user.deleted') {
+      const data = userDataSchema.parse(event.data);
+      guard.onUserDeleted(data.uuid);
       return;
     }
-    default:
-      logger.debug({ scope: event.scope }, 'webhook scope ignored');
+    logger.debug({ event: event.event }, 'user event ignored');
+    return;
   }
+
+  if (event.scope === 'user_hwid_devices') {
+    if (event.event === 'user_hwid_devices.added') {
+      const data = hwidDataSchema.parse(event.data);
+      await guard.onHwidAdded(
+        {
+          uuid: data.user.uuid,
+          username: data.user.username,
+          tag: data.user.tag ?? null,
+        },
+        { hwid: data.hwidUserDevice.hwid },
+      );
+      return;
+    }
+    logger.debug({ event: event.event }, 'hwid event ignored');
+    return;
+  }
+
+  logger.debug({ scope: event.scope, event: event.event }, 'webhook scope ignored');
 }
