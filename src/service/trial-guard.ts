@@ -75,7 +75,13 @@ export class TrialGuard {
   }
 
   async onHwidAdded(user: TrialUser, device: HwidDevice): Promise<void> {
-    if (!this.isTrial(user.tag)) return;
+    if (!this.isTrial(user.tag)) {
+      this.opts.logger.info(
+        { uuid: user.uuid, tag: user.tag, hwid: device.hwid },
+        'hwid event ignored: user tag is not in TRIAL_TAGS',
+      );
+      return;
+    }
 
     const decision = this.opts.db.transaction(() => {
       const existing = this.selectHwidOwner.get(device.hwid);
