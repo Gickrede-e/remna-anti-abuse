@@ -15,19 +15,23 @@ that consumes Remnawave webhooks and calls the public REST API.
 2. Remnawave fires `user_hwid_devices.added` (scope `user_hwid_devices`) when a
    client first sends an `x-hwid` header on a subscription request — *only if
    HWID Device Limit is enabled in the panel*. The service:
-   - records the (hwid → user_uuid) mapping the first time the HWID is seen for
-     a trial user, or
-   - calls `POST /api/users/{uuid}/actions/disable` if the same HWID already
+   - records the HWID and its first trial owner's user ID, or
+   - calls `POST /api/users/{userId}/actions/disable` if the same HWID already
      belongs to a different trial user, and writes a row to `abuse_log`.
 3. `user.deleted` removes the record from `trial_users`. The HWID stays
    reserved permanently — that's the whole point of this service.
+
+Remnawave 3 uses numeric user IDs. Older payloads use UUIDs, and both formats
+are stored as text in the existing SQLite `*_uuid` columns. When a legacy
+device owner has no verified numeric mapping, the service only disables an
+account that was created after the device was first recorded.
 
 ## Requirements
 
 - Remnawave panel ≥ 2.7 with HWID Device Limit feature **enabled**
   (Subscription → Settings → HWID Device Limit). Without it the panel never
   emits `user_hwid_devices.added` and this service has nothing to act on.
-- An API token from the panel (Settings → API Tokens).
+- An API token from the panel (Settings → API Tokens). A scoped token needs `users:disable`.
 - A reachable HTTP endpoint for the panel to post webhooks to.
 
 ## Configuration (`.env`)
@@ -140,5 +144,5 @@ docker run --rm -v "$PWD/data":/from -v remna-anti-abuse_anti-abuse-data:/to \
   without a fresh `x-remnawave-timestamp` (within `WEBHOOK_TIMESTAMP_TOLERANCE_SEC`)
   are rejected with 401, blocking replay.
 - The bearer API token is read from env only; it never leaves the process.
-- Run behind a reverse proxy that terminates TLS — webhooks contain user UUIDs
+- Run behind a reverse proxy that terminates TLS — webhooks contain user identifiers
   and HWIDs.

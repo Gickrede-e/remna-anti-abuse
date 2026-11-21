@@ -2,11 +2,7 @@ import { z } from 'zod';
 import type { Logger } from '../logger.js';
 import type { TrialGuard } from '../service/trial-guard.js';
 
-/**
- * Минимально валидируем только то, что нам нужно. Это устойчивее к разнице
- * версий между панелью и npm-пакетом @remnawave/backend-contract — реальный
- * payload может содержать больше или меньше полей, нам важны uuid + tag + hwid.
- */
+// Validate the fields the guard uses across panel versions.
 const envelopeSchema = z
   .object({
     scope: z.string(),
@@ -15,13 +11,18 @@ const envelopeSchema = z
   })
   .passthrough();
 
-const userDataSchema = z
-  .object({
-    uuid: z.string(),
-    username: z.string().default(''),
-    tag: z.string().nullable().optional(),
-  })
-  .passthrough();
+const userFields = z.object({
+  username: z.string().default(''),
+  tag: z.string().nullable().default(null),
+  createdAt: z.string().datetime({ offset: true }).optional().catch(undefined),
+});
+
+const userDataSchema = z.union([
+  // Remnawave v2 included a numeric ID but used the UUID for user actions.
+  userFields.extend({ uuid: z.string().min(1) })
+    .transform(({ uuid, ...user }) => ({ ...user, id: uuid })),
+  userFields.extend({ id: z.number().int().positive().safe().transform(id => String(id)) }),
+]);
 
 const hwidDataSchema = z
   .object({
@@ -54,16 +55,12 @@ export async function handleWebhookEvent(
   if (event.scope === 'user') {
     if (event.event === 'user.created') {
       const data = userDataSchema.parse(event.data);
-      guard.onUserCreated({
-        uuid: data.uuid,
-        username: data.username,
-        tag: data.tag ?? null,
-      });
+      guard.onUserCreated(data);
       return;
     }
     if (event.event === 'user.deleted') {
       const data = userDataSchema.parse(event.data);
-      guard.onUserDeleted(data.uuid);
+      guard.onUserDeleted(data.id);
       return;
     }
     logger.debug({ event: event.event }, 'user event ignored');
@@ -73,14 +70,7 @@ export async function handleWebhookEvent(
   if (event.scope === 'user_hwid_devices') {
     if (event.event === 'user_hwid_devices.added') {
       const data = hwidDataSchema.parse(event.data);
-      await guard.onHwidAdded(
-        {
-          uuid: data.user.uuid,
-          username: data.user.username,
-          tag: data.user.tag ?? null,
-        },
-        { hwid: data.hwidUserDevice.hwid },
-      );
+      await guard.onHwidAdded(data.user, { hwid: data.hwidUserDevice.hwid });
       return;
     }
     logger.debug({ event: event.event }, 'hwid event ignored');

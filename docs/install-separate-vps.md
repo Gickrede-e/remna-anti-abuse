@@ -26,7 +26,7 @@
   - Включён HWID Device Limit (Subscription → Settings).
   - Создан Bearer API Token (Settings → API Tokens). Скопируйте, он понадобится.
   - Известен публичный URL панели (`https://panel.example.com`) — anti-abuse
-    будет ходить туда за `POST /api/users/{uuid}/actions/disable`.
+    будет ходить туда за `POST /api/users/{userId}/actions/disable`.
 
 ## 1. Готовим VPS
 

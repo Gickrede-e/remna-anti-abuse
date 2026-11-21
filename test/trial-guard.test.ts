@@ -42,7 +42,7 @@ describe('TrialGuard', () => {
   });
 
   it('records trial users on user.created', () => {
-    guard.onUserCreated({ uuid: 'user-a', username: 'alice', tag: 'trial' });
+    guard.onUserCreated({ id: 'user-a', username: 'alice', tag: 'trial' });
     const row = db
       .prepare<[string], { tag: string; username: string }>(
         'SELECT tag, username FROM trial_users WHERE user_uuid = ?',
@@ -52,8 +52,8 @@ describe('TrialGuard', () => {
   });
 
   it('ignores users without a trial tag', () => {
-    guard.onUserCreated({ uuid: 'user-paid', username: 'paid', tag: 'paid' });
-    guard.onUserCreated({ uuid: 'user-null', username: 'nolan', tag: null });
+    guard.onUserCreated({ id: 'user-paid', username: 'paid', tag: 'paid' });
+    guard.onUserCreated({ id: 'user-null', username: 'nolan', tag: null });
     const count = db
       .prepare<[], { c: number }>('SELECT COUNT(*) as c FROM trial_users')
       .get();
@@ -61,9 +61,9 @@ describe('TrialGuard', () => {
   });
 
   it('records first hwid for a trial user without disabling anyone', async () => {
-    guard.onUserCreated({ uuid: 'user-a', username: 'alice', tag: 'trial' });
+    guard.onUserCreated({ id: 'user-a', username: 'alice', tag: 'trial' });
     await guard.onHwidAdded(
-      { uuid: 'user-a', username: 'alice', tag: 'trial' },
+      { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     expect(client.disableUser).not.toHaveBeenCalled();
@@ -76,13 +76,13 @@ describe('TrialGuard', () => {
   });
 
   it('is idempotent when the same user re-adds the same hwid', async () => {
-    guard.onUserCreated({ uuid: 'user-a', username: 'alice', tag: 'trial' });
+    guard.onUserCreated({ id: '101', username: 'alice', tag: 'trial' });
     await guard.onHwidAdded(
-      { uuid: 'user-a', username: 'alice', tag: 'trial' },
+      { id: '101', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     await guard.onHwidAdded(
-      { uuid: 'user-a', username: 'alice', tag: 'trial' },
+      { id: '101', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     expect(client.disableUser).not.toHaveBeenCalled();
@@ -93,14 +93,14 @@ describe('TrialGuard', () => {
   });
 
   it('disables a second trial user reusing the same hwid', async () => {
-    guard.onUserCreated({ uuid: 'user-a', username: 'alice', tag: 'trial' });
-    guard.onUserCreated({ uuid: 'user-b', username: 'bob', tag: 'trial' });
+    guard.onUserCreated({ id: 'user-a', username: 'alice', tag: 'trial' });
+    guard.onUserCreated({ id: 'user-b', username: 'bob', tag: 'trial' });
     await guard.onHwidAdded(
-      { uuid: 'user-a', username: 'alice', tag: 'trial' },
+      { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     await guard.onHwidAdded(
-      { uuid: 'user-b', username: 'bob', tag: 'trial' },
+      { id: 'user-b', username: 'bob', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     expect(client.disableUser).toHaveBeenCalledOnce();
@@ -120,14 +120,47 @@ describe('TrialGuard', () => {
     ]);
   });
 
+  it('preserves a legacy device owner and only disables a provably newer trial user', async () => {
+    const device = { hwid: 'hwid-legacy' };
+    db.prepare('INSERT INTO trial_hwids(hwid, user_uuid, first_seen_at) VALUES (?, ?, ?)').run(
+      device.hwid,
+      'old-owner-uuid',
+      Date.parse('2026-10-01T11:00:00.000Z'),
+    );
+
+    const returningUser = {
+      id: '101',
+      username: 'alice',
+      tag: 'trial',
+      createdAt: '2026-10-01T10:59:00.000Z',
+    };
+    const unknownUser = { id: '102', username: 'bob', tag: 'trial' };
+    await guard.onHwidAdded(returningUser, device);
+    await guard.onHwidAdded(unknownUser, device);
+    expect(client.disableUser).not.toHaveBeenCalled();
+
+    const newerUser = {
+      id: '103',
+      username: 'carol',
+      tag: 'trial',
+      createdAt: '2026-10-01T11:01:00.000Z',
+    };
+    await guard.onHwidAdded(newerUser, device);
+
+    expect(client.disableUser).toHaveBeenCalledOnce();
+    expect(client.disableUser).toHaveBeenCalledWith('103');
+    expect(db.prepare('SELECT user_uuid FROM trial_hwids WHERE hwid = ?').get(device.hwid))
+      .toEqual({ user_uuid: 'old-owner-uuid' });
+  });
+
   it('does not disable when the offender has a non-trial tag', async () => {
-    guard.onUserCreated({ uuid: 'user-a', username: 'alice', tag: 'trial' });
+    guard.onUserCreated({ id: 'user-a', username: 'alice', tag: 'trial' });
     await guard.onHwidAdded(
-      { uuid: 'user-a', username: 'alice', tag: 'trial' },
+      { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     await guard.onHwidAdded(
-      { uuid: 'user-paid', username: 'paid', tag: 'paid' },
+      { id: 'user-paid', username: 'paid', tag: 'paid' },
       { hwid: 'hwid-aaa' },
     );
     expect(client.disableUser).not.toHaveBeenCalled();
@@ -142,11 +175,11 @@ describe('TrialGuard', () => {
       dryRun: true,
     });
     await dryGuard.onHwidAdded(
-      { uuid: 'user-a', username: 'alice', tag: 'trial' },
+      { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     await dryGuard.onHwidAdded(
-      { uuid: 'user-b', username: 'bob', tag: 'trial' },
+      { id: 'user-b', username: 'bob', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     expect(client.disableUser).not.toHaveBeenCalled();
@@ -159,11 +192,11 @@ describe('TrialGuard', () => {
   it('records abuse with failed status when API rejects', async () => {
     client.disableUser = vi.fn().mockRejectedValue(new Error('boom'));
     await guard.onHwidAdded(
-      { uuid: 'user-a', username: 'alice', tag: 'trial' },
+      { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     await guard.onHwidAdded(
-      { uuid: 'user-b', username: 'bob', tag: 'trial' },
+      { id: 'user-b', username: 'bob', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     const status = db

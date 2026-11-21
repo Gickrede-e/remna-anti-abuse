@@ -12,7 +12,7 @@
   (Subscription → Settings → HWID Device Limit). Без него вебхук
   `user_hwid_devices.added` не эмитится и сервис ничего не увидит.
 - В панели создан Bearer API Token (Settings → API Tokens) — нужен для
-  вызова `POST /api/users/{uuid}/actions/disable`.
+  вызова `POST /api/users/{userId}/actions/disable`.
 
 ## 1. Клонируем репозиторий
 
@@ -124,7 +124,7 @@ INFO: Server listening at http://0.0.0.0:3088
 ## 7. Проверяем end-to-end
 
 1. В панели создайте trial-юзера с `tag=trial`. В логах:
-   `trial user registered { uuid: ..., tag: 'trial' }`.
+   `trial user registered { userId: ..., tag: 'trial' }`.
 2. На любом устройстве откройте subscription URL этого юзера так, чтобы клиент
    передал заголовок `x-hwid` (Happ, Hiddify, FlClash и т. п.). В логах:
    `trial hwid recorded as first owner`.

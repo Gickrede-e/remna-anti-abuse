@@ -46,16 +46,78 @@ describe('parseWebhookEvent', () => {
 });
 
 describe('handleWebhookEvent', () => {
-  it('routes user.created to guard.onUserCreated', async () => {
+  const currentUser = {
+    id: 101,
+    shortUuid: 'fixture-subscription',
+    username: 'alice',
+    tag: 'trial',
+    createdAt: '2026-11-20T10:00:00.000Z',
+  };
+
+  it('registers user.created with the numeric Remnawave user ID', async () => {
+    const guard = fakeGuard();
+    const event = parseWebhookEvent({ scope: 'user', event: 'user.created', data: currentUser });
+
+    await handleWebhookEvent(event, { guard, logger });
+
+    expect(guard.onUserCreated).toHaveBeenCalledWith({
+      id: '101',
+      username: 'alice',
+      tag: 'trial',
+      createdAt: currentUser.createdAt,
+    });
+  });
+
+  it('removes user.deleted with the numeric Remnawave user ID', async () => {
+    const guard = fakeGuard();
+    const event = parseWebhookEvent({ scope: 'user', event: 'user.deleted', data: currentUser });
+
+    await handleWebhookEvent(event, { guard, logger });
+
+    expect(guard.onUserDeleted).toHaveBeenCalledWith('101');
+  });
+
+  it('passes the numeric owner ID and account creation time from a device webhook', async () => {
+    const guard = fakeGuard();
+    const event = parseWebhookEvent({
+      scope: 'user_hwid_devices',
+      event: 'user_hwid_devices.added',
+      data: { user: currentUser, hwidUserDevice: { userId: currentUser.id, hwid: 'hwid-aaa' } },
+    });
+
+    await handleWebhookEvent(event, { guard, logger });
+
+    expect(guard.onHwidAdded).toHaveBeenCalledWith(
+      { id: '101', username: 'alice', tag: 'trial', createdAt: currentUser.createdAt },
+      { hwid: 'hwid-aaa' },
+    );
+  });
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '101'])(
+    'rejects an invalid numeric user ID %s',
+    async (id) => {
+      const guard = fakeGuard();
+      const event = parseWebhookEvent({
+        scope: 'user',
+        event: 'user.created',
+        data: { ...currentUser, id },
+      });
+
+      await expect(handleWebhookEvent(event, { guard, logger })).rejects.toThrow();
+      expect(guard.onUserCreated).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses the legacy UUID when an older payload also contains a numeric ID', async () => {
     const guard = fakeGuard();
     const event = parseWebhookEvent({
       scope: 'user',
       event: 'user.created',
-      data: { uuid: 'u-1', username: 'alice', tag: 'trial' },
+      data: { uuid: 'u-1', id: 101, username: 'alice', tag: 'trial' },
     });
     await handleWebhookEvent(event, { guard, logger });
     expect(guard.onUserCreated).toHaveBeenCalledWith({
-      uuid: 'u-1',
+      id: 'u-1',
       username: 'alice',
       tag: 'trial',
     });
@@ -84,7 +146,7 @@ describe('handleWebhookEvent', () => {
     });
     await handleWebhookEvent(event, { guard, logger });
     expect(guard.onHwidAdded).toHaveBeenCalledWith(
-      { uuid: 'u-1', username: 'alice', tag: 'trial' },
+      { id: 'u-1', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
   });
@@ -98,7 +160,7 @@ describe('handleWebhookEvent', () => {
     });
     await handleWebhookEvent(event, { guard, logger });
     expect(guard.onUserCreated).toHaveBeenCalledWith({
-      uuid: 'u-1',
+      id: 'u-1',
       username: 'alice',
       tag: null,
     });
@@ -128,7 +190,7 @@ describe('handleWebhookEvent', () => {
     expect(guard.onHwidAdded).not.toHaveBeenCalled();
   });
 
-  it('throws on user.created with missing uuid', async () => {
+  it('rejects user.created without an ID or a legacy UUID', async () => {
     const guard = fakeGuard();
     const event = parseWebhookEvent({
       scope: 'user',
