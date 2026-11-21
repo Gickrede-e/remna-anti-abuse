@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { loadConfig } from './config.js';
 import { openDatabase } from './db.js';
 import { createRemnawaveClient } from './remnawave-client.js';
+import { DisableWorker } from './service/disable-worker.js';
 import { TrialGuard } from './service/trial-guard.js';
 import { registerWebhookRoute } from './webhook/route.js';
 
@@ -36,18 +37,16 @@ async function main(): Promise<void> {
   );
 
   const db = openDatabase(config.dbPath);
+  const shutdownController = new AbortController();
   const client = createRemnawaveClient({
+    signal: shutdownController.signal,
     baseUrl: config.remnawaveBaseUrl,
     apiToken: config.remnawaveApiToken,
     logger,
   });
-  const guard = new TrialGuard({
-    db,
-    client,
-    logger,
-    trialTags: config.trialTags,
-    dryRun: config.dryRun,
-  });
+  const options = { db, logger, trialTags: config.trialTags, dryRun: config.dryRun };
+  const guard = new TrialGuard(options);
+  const worker = new DisableWorker({ ...options, client });
 
   await registerWebhookRoute(app, {
     guard,
@@ -56,10 +55,28 @@ async function main(): Promise<void> {
     timestampToleranceSec: config.webhookTimestampToleranceSec,
   });
 
+  await app.listen({ port: config.port, host: config.host });
+  let running: Promise<void> | undefined;
+  const poll = () => {
+    if (running || shutdownController.signal.aborted) return;
+    running = (async () => {
+      while (!shutdownController.signal.aborted && await worker.runOne()) {
+        // Drain due jobs serially before the next poll.
+      }
+    })().catch(err => logger.error({ err }, 'disable worker poll failed')).finally(() => { running = undefined; });
+  };
+  const pollIntervalMs = 5_000;
+  const timer = setInterval(poll, pollIntervalMs).unref();
+  poll();
+
   const shutdown = async (signal: string): Promise<void> => {
+    if (shutdownController.signal.aborted) return;
+    shutdownController.abort();
+    clearInterval(timer);
     logger.info({ signal }, 'shutting down');
     try {
       await app.close();
+      await running;
       db.close();
     } finally {
       process.exit(0);
@@ -67,8 +84,6 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
-
-  await app.listen({ port: config.port, host: config.host });
 }
 
 main().catch((err) => {

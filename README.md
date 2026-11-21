@@ -31,7 +31,7 @@ account that was created after the device was first recorded.
 - Remnawave panel ≥ 2.7 with HWID Device Limit feature **enabled**
   (Subscription → Settings → HWID Device Limit). Without it the panel never
   emits `user_hwid_devices.added` and this service has nothing to act on.
-- An API token from the panel (Settings → API Tokens). A scoped token needs `users:disable`.
+- An API token that can read users and HWID devices, look them up by user, and disable users. In Remnawave 3 these scopes include `users:list`, `users:by-id`, `hwid-user-devices:list`, `hwid-user-devices:list-by-user`, and `users:disable`.
 - A reachable HTTP endpoint for the panel to post webhooks to.
 
 ## Configuration (`.env`)
@@ -93,8 +93,49 @@ npm run dev
 npm test
 ```
 
-Covers HMAC signature verification (5 cases), timestamp freshness (5 cases),
-and the trial-guard state machine (8 cases) on an in-memory SQLite.
+Covers signed webhook delivery, trial ownership, durable retries, panel API reads,
+and read-only reconciliation.
+
+## Reconciliation report
+
+Run `docker compose exec -T anti-abuse node dist/reconcile.js` to generate a JSON
+report. The command reads tagged panel users and their current device associations
+through the API and opens the existing SQLite file read-only. It lists missing and
+shared devices, ownership conflicts, legacy owners, and disable actions that need
+review. Rows include panel IDs, association timestamps, and SHA-256 fingerprints
+of HWIDs. Current panel associations can include expired or disabled trials.
+Historical ownership requires dated evidence.
+
+For a daily report on a systemd VPS with the standard container name:
+
+```bash
+install -m 644 ops/remna-anti-abuse-report.{service,timer} /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now remna-anti-abuse-report.timer
+systemctl start remna-anti-abuse-report.service
+```
+
+The timer runs at 00:15 UTC. The latest complete report is
+`/var/lib/remna-anti-abuse-reports/latest.json` and is readable by root.
+Failed scans leave the last complete report available. Check
+`journalctl -u remna-anti-abuse-report.service` for errors.
+
+## Disable delivery and retries
+
+A signed device event that meets the trial rule is committed to the SQLite
+queue before the webhook returns success. Exact redeliveries share a job.
+Before every disable, the worker reads the current account and device, verifies
+the original local ownership evidence, and checks that the account is active and
+still trial-tagged. A removed or replaced device cancels the action. The panel
+performs the final disable as a separate request from these reads.
+
+Network errors, HTTP 408, 429, and 5xx use up to five total attempts, with
+delays of 30 seconds, two minutes, ten minutes, and one hour. The worker honors
+longer `Retry-After` values up to one day. Exhausted retries, credentials errors,
+and unverified ownership appear in `queue.reviewJobs` and the service error log.
+Dry-run mode pauses live actions. The database preserves the original audit rows.
+Unresolved historical UUID failures start in review until an operator verifies
+their current identities.
 
 ## Operational queries
 

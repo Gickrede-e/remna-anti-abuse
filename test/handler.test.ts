@@ -90,6 +90,7 @@ describe('handleWebhookEvent', () => {
     expect(guard.onHwidAdded).toHaveBeenCalledWith(
       { id: '101', username: 'alice', tag: 'trial', createdAt: currentUser.createdAt },
       { hwid: 'hwid-aaa' },
+      expect.stringMatching(/^webhook:[a-f0-9]{64}$/),
     );
   });
 
@@ -148,6 +149,7 @@ describe('handleWebhookEvent', () => {
     expect(guard.onHwidAdded).toHaveBeenCalledWith(
       { id: 'u-1', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
+      expect.stringMatching(/^webhook:[a-f0-9]{64}$/),
     );
   });
 
