@@ -2,7 +2,7 @@ import { REST_API } from '@remnawave/backend-contract';
 import type { Logger } from './logger.js';
 
 export interface RemnawaveClient {
-  disableUser(uuid: string): Promise<void>;
+  disableUser(userId: string): Promise<void>;
 }
 
 export interface RemnawaveClientOptions {
@@ -28,25 +28,24 @@ export function createRemnawaveClient(opts: RemnawaveClientOptions): RemnawaveCl
   const base = opts.baseUrl.replace(/\/$/, '');
 
   return {
-    async disableUser(uuid) {
-      const url = base + REST_API.USERS.ACTIONS.DISABLE(uuid);
+    async disableUser(userId) {
+      const url = base + REST_API.USERS.ACTIONS.DISABLE(userId);
       const res = await fetchFn(url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${opts.apiToken}`,
-          'Content-Type': 'application/json',
           Accept: 'application/json',
         },
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new RemnawaveApiError(
-          `disableUser(${uuid}) failed: ${res.status} ${res.statusText}`,
+          `disableUser(${userId}) failed: ${res.status} ${res.statusText}`,
           res.status,
           body,
         );
       }
-      opts.logger.info({ uuid, status: res.status }, 'remnawave: user disabled');
+      opts.logger.info({ userId, status: res.status }, 'remnawave: user disabled');
     },
   };
 }
