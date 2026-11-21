@@ -1,11 +1,11 @@
+import { ZodError } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { handleWebhookEvent, parseWebhookEvent } from './handler.js';
+import { handleWebhookEvent, parseWebhookEvent, type WebhookHandlerOptions } from './handler.js';
 import type { Logger } from '../logger.js';
-import type { TrialGuard } from '../service/trial-guard.js';
 import { isFreshTimestamp, verifySignature } from './verify.js';
 
 export interface WebhookRouteOptions {
-  guard: TrialGuard;
+  guard: WebhookHandlerOptions['guard'];
   logger: Logger;
   webhookSecret: string;
   timestampToleranceSec: number;
@@ -85,12 +85,14 @@ export async function registerWebhookRoute(
     }
 
     try {
-      await handleWebhookEvent(event, { guard: opts.guard, logger: opts.logger });
+      await handleWebhookEvent(event, { guard: opts.guard, logger: opts.logger }, rawBody);
     } catch (err) {
       opts.logger.error(
         { err, scope: event.scope, event: event.event },
         'webhook handler error',
       );
+      if (err instanceof ZodError) return reply.code(400).send({ error: 'invalid event data' });
+      return reply.code(503).send({ error: 'event processing unavailable' });
     }
     return reply.code(200).send({ ok: true });
   });

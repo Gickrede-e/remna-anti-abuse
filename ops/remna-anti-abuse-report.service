@@ -1,0 +1,18 @@
+[Unit]
+Description=Generate the Remnawave trial-device reconciliation report
+After=docker.service
+Requires=docker.service
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+UMask=0077
+StateDirectory=remna-anti-abuse-reports
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/remna-anti-abuse-reports
+ExecStart=/bin/sh -ec '/usr/bin/docker exec remna-anti-abuse node dist/reconcile.js > .latest.json.tmp && mv -f .latest.json.tmp latest.json'
+ExecStopPost=-/usr/bin/rm -f /var/lib/remna-anti-abuse-reports/.latest.json.tmp
+TimeoutStartSec=4min
+Restart=on-failure
+RestartSec=60

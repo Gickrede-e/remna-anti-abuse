@@ -12,8 +12,13 @@ export function openDatabase(dbPath: string): DB {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
-  runMigrations(db);
-  return db;
+  try {
+    db.transaction(() => runMigrations(db)).immediate();
+    return db;
+  } catch (err) {
+    db.close();
+    throw err;
+  }
 }
 
 function runMigrations(db: DB): void {

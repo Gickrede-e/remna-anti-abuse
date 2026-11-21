@@ -11,8 +11,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
+    "reconcile": "node dist/reconcile.js",
     "dev": "tsx watch src/main.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --rootDir .",
     "test": "vitest run",
     "test:watch": "vitest"
   },

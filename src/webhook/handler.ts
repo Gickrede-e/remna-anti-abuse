@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Logger } from '../logger.js';
 import type { TrialGuard } from '../service/trial-guard.js';
@@ -38,7 +39,7 @@ const hwidDataSchema = z
 export type WebhookEvent = z.infer<typeof envelopeSchema>;
 
 export interface WebhookHandlerOptions {
-  guard: TrialGuard;
+  guard: Pick<TrialGuard, 'onUserCreated' | 'onUserDeleted' | 'onHwidAdded'>;
   logger: Logger;
 }
 
@@ -49,6 +50,7 @@ export function parseWebhookEvent(body: unknown): WebhookEvent {
 export async function handleWebhookEvent(
   event: WebhookEvent,
   opts: WebhookHandlerOptions,
+  signedBody = JSON.stringify(event),
 ): Promise<void> {
   const { guard, logger } = opts;
 
@@ -70,7 +72,8 @@ export async function handleWebhookEvent(
   if (event.scope === 'user_hwid_devices') {
     if (event.event === 'user_hwid_devices.added') {
       const data = hwidDataSchema.parse(event.data);
-      await guard.onHwidAdded(data.user, { hwid: data.hwidUserDevice.hwid });
+      const deliveryKey = 'webhook:' + createHash('sha256').update(signedBody).digest('hex');
+      await guard.onHwidAdded(data.user, { hwid: data.hwidUserDevice.hwid }, deliveryKey);
       return;
     }
     logger.debug({ event: event.event }, 'hwid event ignored');

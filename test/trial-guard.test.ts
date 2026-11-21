@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pino } from 'pino';
 import type { Database as DB } from 'better-sqlite3';
 import { openDatabase } from '../src/db.js';
-import type { RemnawaveClient } from '../src/remnawave-client.js';
-import { TrialGuard } from '../src/service/trial-guard.js';
+import { DisableWorker } from '../src/service/disable-worker.js';
+import { TrialGuard, type TrialUser, type HwidDevice } from '../src/service/trial-guard.js';
 
 const logger = pino({ level: 'silent' });
 
@@ -20,21 +20,29 @@ interface AbuseRow {
 describe('TrialGuard', () => {
   let dir: string;
   let db: DB;
-  let client: { disableUser: ReturnType<typeof vi.fn> } & RemnawaveClient;
+  const makeClient = () => ({
+    disableUser: vi.fn(async (_id: string) => {}),
+    getUser: async (id: string) => ({ id, deviceUserId: id, tag: 'trial', status: 'ACTIVE' as const, createdAt: '2026-10-02T00:00:00Z' }),
+    getUserDevices: async (id: string) => ['hwid-aaa','hwid-legacy'].map(hwid => ({ hwid, userId: id, createdAt: '2026-01-01T00:00:00Z' })),
+  });
+  let client: ReturnType<typeof makeClient>;
   let guard: TrialGuard;
+  let worker: DisableWorker;
+  let delivery = 0;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'trial-guard-'));
     db = openDatabase(join(dir, 'test.sqlite'));
-    client = { disableUser: vi.fn().mockResolvedValue(undefined) };
-    guard = new TrialGuard({
-      db,
-      client,
-      logger,
-      trialTags: ['trial', 'trial7d'],
-      dryRun: false,
-    });
+    client = makeClient();
+    const options = { db, logger, trialTags: ['trial', 'trial7d'], dryRun: false };
+    guard = new TrialGuard(options);
+    worker = new DisableWorker({ ...options, client });
   });
+
+  async function recordDevice(receiver: TrialGuard, user: TrialUser, device: HwidDevice) {
+    receiver.onHwidAdded(user, device, 'webhook:fixture-' + ++delivery);
+    await worker.runOne();
+  }
 
   afterEach(() => {
     db.close();
@@ -62,7 +70,7 @@ describe('TrialGuard', () => {
 
   it('records first hwid for a trial user without disabling anyone', async () => {
     guard.onUserCreated({ id: 'user-a', username: 'alice', tag: 'trial' });
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
@@ -77,11 +85,11 @@ describe('TrialGuard', () => {
 
   it('is idempotent when the same user re-adds the same hwid', async () => {
     guard.onUserCreated({ id: '101', username: 'alice', tag: 'trial' });
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: '101', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: '101', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
@@ -95,11 +103,11 @@ describe('TrialGuard', () => {
   it('disables a second trial user reusing the same hwid', async () => {
     guard.onUserCreated({ id: 'user-a', username: 'alice', tag: 'trial' });
     guard.onUserCreated({ id: 'user-b', username: 'bob', tag: 'trial' });
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: 'user-b', username: 'bob', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
@@ -135,8 +143,8 @@ describe('TrialGuard', () => {
       createdAt: '2026-10-01T10:59:00.000Z',
     };
     const unknownUser = { id: '102', username: 'bob', tag: 'trial' };
-    await guard.onHwidAdded(returningUser, device);
-    await guard.onHwidAdded(unknownUser, device);
+    await recordDevice(guard, returningUser, device);
+    await recordDevice(guard, unknownUser, device);
     expect(client.disableUser).not.toHaveBeenCalled();
 
     const newerUser = {
@@ -145,7 +153,7 @@ describe('TrialGuard', () => {
       tag: 'trial',
       createdAt: '2026-10-01T11:01:00.000Z',
     };
-    await guard.onHwidAdded(newerUser, device);
+    await recordDevice(guard, newerUser, device);
 
     expect(client.disableUser).toHaveBeenCalledOnce();
     expect(client.disableUser).toHaveBeenCalledWith('103');
@@ -155,11 +163,11 @@ describe('TrialGuard', () => {
 
   it('does not disable when the offender has a non-trial tag', async () => {
     guard.onUserCreated({ id: 'user-a', username: 'alice', tag: 'trial' });
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: 'user-paid', username: 'paid', tag: 'paid' },
       { hwid: 'hwid-aaa' },
     );
@@ -169,16 +177,15 @@ describe('TrialGuard', () => {
   it('logs abuse but does not call API when dryRun is true', async () => {
     const dryGuard = new TrialGuard({
       db,
-      client,
       logger,
       trialTags: ['trial'],
       dryRun: true,
     });
-    await dryGuard.onHwidAdded(
+    await recordDevice(dryGuard,
       { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
-    await dryGuard.onHwidAdded(
+    await recordDevice(dryGuard,
       { id: 'user-b', username: 'bob', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
@@ -189,19 +196,19 @@ describe('TrialGuard', () => {
     expect(status?.disable_status).toBe('skipped_dry_run');
   });
 
-  it('records abuse with failed status when API rejects', async () => {
+  it('records an unexpected error for review', async () => {
     client.disableUser = vi.fn().mockRejectedValue(new Error('boom'));
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: 'user-a', username: 'alice', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
-    await guard.onHwidAdded(
+    await recordDevice(guard,
       { id: 'user-b', username: 'bob', tag: 'trial' },
       { hwid: 'hwid-aaa' },
     );
     const status = db
       .prepare<[], { disable_status: string }>('SELECT disable_status FROM abuse_log')
       .get();
-    expect(status?.disable_status).toBe('failed');
+    expect(status?.disable_status).toBe('review');
   });
 });
